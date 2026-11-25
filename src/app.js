@@ -222,6 +222,8 @@ export function createApp({
       return true;
     } catch (err) {
       if (record.dropped) return false;
+      // A command went through meanwhile: this failure is older than it.
+      if (record.commandSeq !== seq) return record.error === null;
       if (!err.kind) throw err;
       record.error = { kind: err.kind, message: err.message };
       issues.fail(`netio ${record.netio.slot}`, `${label(record)}: ${err.message}`);
@@ -498,6 +500,7 @@ export function createApp({
     if (
       answer &&
       answer.platformId === record.platformId &&
+      answer.metered === record.status.metered &&
       answer.outputs.length === record.status.outputs.length
     ) {
       await applyStatus(record, json);
