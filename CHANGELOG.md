@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-25
+
 ### Added
 
 - Netio power strips and PDUs (PowerPDU, PowerCable, PowerBOX, NETIO 4 / 4All /
@@ -24,3 +26,6 @@ the notes of the version's GitHub Release.
 - "Netio outputs" dashboard widget: outputs, power, voltage, frequency, and a
   button opening a form to control an output.
 - Documentation in English, French, German and Spanish.
+
+[Unreleased]: https://github.com/guim31/gladys-netio/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-netio/releases/tag/v1.0.0
