@@ -30,6 +30,19 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+What the integration handles:
+
+- the addresses of up to three Netio devices and the user name and password of
+  their JSON API, kept in the Gladys configuration, sent only to those
+  addresses (HTTP Basic), never written to the logs;
+- nothing under `/data`: the integration stores no file;
+- network: HTTP or HTTPS requests to the configured Netio addresses on the
+  local network only. With HTTPS, the self-signed certificate of the Netio is
+  not verified. No other host is contacted.
+
+Commands that cut the power of an output (switch off, restart) are refused
+unless the user enables them in the configuration.
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
 and the third-party services and devices the integration talks to.

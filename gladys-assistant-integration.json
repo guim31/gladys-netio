@@ -1,177 +1,576 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Netio",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Netio power strips and PDUs over the local JSON API: outputs, power and energy.",
+    "fr": "Multiprises et PDU Netio via l'API JSON locale : sorties, puissance et énergie.",
+    "de": "Netio-Steckdosenleisten und PDUs über die lokale JSON-API: Ausgänge, Leistung, Energie.",
+    "es": "Regletas y PDU Netio mediante la API JSON local: salidas, potencia y energía."
   },
   "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
-  "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "docker_image": "ghcr.io/guim31/gladys-netio:1.0.0",
+  "gladys_version": ">=5.2.0",
+  "cover_image": "https://raw.githubusercontent.com/guim31/gladys-netio/main/cover.png",
+  "categories": ["energy", "servers"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Netio devices",
+        "fr": "Vos Netio",
+        "de": "Deine Netio-Geräte",
+        "es": "Sus dispositivos Netio"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "In the web interface of each Netio, open M2M API → JSON, enable it, allow read-write access and set its user name and password. Then enter its address and that account below. Up to three Netio.",
+        "fr": "Dans l'interface web de chaque Netio, ouvrez M2M API → JSON, activez-la, autorisez la lecture-écriture et choisissez son nom d'utilisateur et son mot de passe. Saisissez ensuite son adresse et ce compte ci-dessous. Jusqu'à trois Netio.",
+        "de": "Öffne in der Weboberfläche jedes Netio M2M API → JSON, aktiviere die API, erlaube Lesen und Schreiben und lege Benutzername und Passwort fest. Gib dann unten die Adresse und dieses Konto ein. Bis zu drei Netio.",
+        "es": "En la interfaz web de cada Netio, abra M2M API → JSON, actívela, permita lectura y escritura y defina su usuario y contraseña. Después introduzca su dirección y esa cuenta abajo. Hasta tres Netio."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://www.netio-products.com/en/glossary/m2m-api",
+          "label": {
+            "en": "Netio M2M API",
+            "fr": "API M2M de Netio",
+            "de": "Netio M2M-API",
+            "es": "API M2M de Netio"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "netio_1_host",
+      "type": "string",
+      "label": {
+        "en": "Netio 1: address",
+        "fr": "Netio 1 : adresse",
+        "de": "Netio 1: Adresse",
+        "es": "Netio 1: dirección"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
-    },
-    {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
       "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+        "en": "IP address or host name, optionally with a port or https://.",
+        "fr": "Adresse IP ou nom d'hôte, éventuellement avec un port ou https://.",
+        "de": "IP-Adresse oder Hostname, optional mit Port oder https://.",
+        "es": "Dirección IP o nombre de host, opcionalmente con un puerto o https://."
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
-    },
-    {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "placeholder": {
+        "en": "e.g. 192.168.1.50",
+        "fr": "ex. 192.168.1.50",
+        "de": "z. B. 192.168.1.50",
+        "es": "p. ej. 192.168.1.50"
+      },
       "required": false,
-      "default": "celsius",
+      "default": ""
+    },
+    {
+      "key": "netio_1_username",
+      "type": "string",
+      "label": {
+        "en": "Netio 1: JSON API user",
+        "fr": "Netio 1 : utilisateur de l'API JSON",
+        "de": "Netio 1: Benutzer der JSON-API",
+        "es": "Netio 1: usuario de la API JSON"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "netio_1_password",
+      "type": "secret",
+      "label": {
+        "en": "Netio 1: JSON API password",
+        "fr": "Netio 1 : mot de passe de l'API JSON",
+        "de": "Netio 1: Passwort der JSON-API",
+        "es": "Netio 1: contraseña de la API JSON"
+      },
+      "required": false
+    },
+    {
+      "key": "netio_2_host",
+      "type": "string",
+      "label": {
+        "en": "Netio 2: address",
+        "fr": "Netio 2 : adresse",
+        "de": "Netio 2: Adresse",
+        "es": "Netio 2: dirección"
+      },
+      "description": {
+        "en": "IP address or host name, optionally with a port or https://.",
+        "fr": "Adresse IP ou nom d'hôte, éventuellement avec un port ou https://.",
+        "de": "IP-Adresse oder Hostname, optional mit Port oder https://.",
+        "es": "Dirección IP o nombre de host, opcionalmente con un puerto o https://."
+      },
+      "placeholder": {
+        "en": "e.g. 192.168.1.50",
+        "fr": "ex. 192.168.1.50",
+        "de": "z. B. 192.168.1.50",
+        "es": "p. ej. 192.168.1.50"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "netio_2_username",
+      "type": "string",
+      "label": {
+        "en": "Netio 2: JSON API user",
+        "fr": "Netio 2 : utilisateur de l'API JSON",
+        "de": "Netio 2: Benutzer der JSON-API",
+        "es": "Netio 2: usuario de la API JSON"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "netio_2_password",
+      "type": "secret",
+      "label": {
+        "en": "Netio 2: JSON API password",
+        "fr": "Netio 2 : mot de passe de l'API JSON",
+        "de": "Netio 2: Passwort der JSON-API",
+        "es": "Netio 2: contraseña de la API JSON"
+      },
+      "required": false
+    },
+    {
+      "key": "netio_3_host",
+      "type": "string",
+      "label": {
+        "en": "Netio 3: address",
+        "fr": "Netio 3 : adresse",
+        "de": "Netio 3: Adresse",
+        "es": "Netio 3: dirección"
+      },
+      "description": {
+        "en": "IP address or host name, optionally with a port or https://.",
+        "fr": "Adresse IP ou nom d'hôte, éventuellement avec un port ou https://.",
+        "de": "IP-Adresse oder Hostname, optional mit Port oder https://.",
+        "es": "Dirección IP o nombre de host, opcionalmente con un puerto o https://."
+      },
+      "placeholder": {
+        "en": "e.g. 192.168.1.50",
+        "fr": "ex. 192.168.1.50",
+        "de": "z. B. 192.168.1.50",
+        "es": "p. ej. 192.168.1.50"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "netio_3_username",
+      "type": "string",
+      "label": {
+        "en": "Netio 3: JSON API user",
+        "fr": "Netio 3 : utilisateur de l'API JSON",
+        "de": "Netio 3: Benutzer der JSON-API",
+        "es": "Netio 3: usuario de la API JSON"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "netio_3_password",
+      "type": "secret",
+      "label": {
+        "en": "Netio 3: JSON API password",
+        "fr": "Netio 3 : mot de passe de l'API JSON",
+        "de": "Netio 3: Passwort der JSON-API",
+        "es": "Netio 3: contraseña de la API JSON"
+      },
+      "required": false
+    },
+    {
+      "key": "poll_interval",
+      "type": "select",
+      "label": {
+        "en": "Refresh interval",
+        "fr": "Intervalle de rafraîchissement",
+        "de": "Aktualisierungsintervall",
+        "es": "Intervalo de actualización"
+      },
+      "description": {
+        "en": "How often the Netio devices are read. Power and energy go to Gladys once a minute at most.",
+        "fr": "Fréquence de lecture des Netio. Puissance et énergie partent vers Gladys une fois par minute au plus.",
+        "de": "Wie oft die Netio gelesen werden. Leistung und Energie gehen höchstens einmal pro Minute an Gladys.",
+        "es": "Frecuencia de lectura de los Netio. Potencia y energía se envían a Gladys como máximo una vez por minuto."
+      },
+      "required": false,
+      "default": "10",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "5",
+          "label": {
+            "en": "5 seconds",
+            "fr": "5 secondes",
+            "de": "5 Sekunden",
+            "es": "5 segundos"
+          }
+        },
+        {
+          "value": "10",
+          "label": {
+            "en": "10 seconds",
+            "fr": "10 secondes",
+            "de": "10 Sekunden",
+            "es": "10 segundos"
+          }
+        },
+        {
+          "value": "30",
+          "label": {
+            "en": "30 seconds",
+            "fr": "30 secondes",
+            "de": "30 Sekunden",
+            "es": "30 segundos"
+          }
+        },
+        {
+          "value": "60",
+          "label": {
+            "en": "1 minute",
+            "fr": "1 minute",
+            "de": "1 Minute",
+            "es": "1 minuto"
+          }
+        }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "allow_power_off",
+      "type": "boolean",
+      "label": {
+        "en": "Allow switching off and restarting",
+        "fr": "Autoriser l'arrêt et le redémarrage",
+        "de": "Ausschalten und Neustart erlauben",
+        "es": "Permitir apagar y reiniciar"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Off by default: a Netio often powers a server or an internet box. Switching on is always allowed. Once ticked, the switches of Gladys, scenes and voice assistants can cut the power.",
+        "fr": "Désactivé par défaut : un Netio alimente souvent un serveur ou une box internet. Allumer est toujours permis. Une fois coché, les interrupteurs de Gladys, les scènes et les assistants vocaux peuvent couper le courant.",
+        "de": "Standardmäßig aus: Ein Netio versorgt oft einen Server oder einen Internet-Router. Einschalten ist immer erlaubt. Ist es aktiviert, können die Schalter von Gladys, Szenen und Sprachassistenten den Strom abschalten.",
+        "es": "Desactivado por defecto: un Netio suele alimentar un servidor o un router de internet. Encender siempre está permitido. Una vez marcado, los interruptores de Gladys, las escenas y los asistentes de voz pueden cortar la corriente."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": false
+    },
+    {
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of names and messages",
+        "fr": "Langue des noms et des messages",
+        "de": "Sprache der Namen und Meldungen",
+        "es": "Idioma de los nombres y mensajes"
+      },
+      "description": {
+        "en": "Used for the feature names (fixed when a device is added) and the messages of scenes.",
+        "fr": "Utilisée pour les noms des fonctionnalités (figés à l'ajout d'un appareil) et les messages des scènes.",
+        "de": "Für die Namen der Funktionen (beim Hinzufügen eines Geräts festgelegt) und die Meldungen der Szenen.",
+        "es": "Se usa para los nombres de las funciones (fijados al añadir un dispositivo) y los mensajes de las escenas."
+      },
+      "required": false,
+      "default": "fr",
+      "options": [
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français",
+            "de": "Französisch",
+            "es": "Francés"
+          }
+        },
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais",
+            "de": "Englisch",
+            "es": "Inglés"
+          }
+        },
+        {
+          "value": "de",
+          "label": {
+            "en": "German",
+            "fr": "Allemand",
+            "de": "Deutsch",
+            "es": "Alemán"
+          }
+        },
+        {
+          "value": "es",
+          "label": {
+            "en": "Spanish",
+            "fr": "Espagnol",
+            "de": "Spanisch",
+            "es": "Español"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion",
+        "de": "Verbindung testen",
+        "es": "Probar la conexión"
+      },
       "timeout_seconds": 30
     },
     {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
+      "key": "control_output",
+      "label": {
+        "en": "Control an output",
+        "fr": "Piloter une sortie",
+        "de": "Ausgang steuern",
+        "es": "Controlar una salida"
+      },
+      "timeout_seconds": 30,
       "fields": [
         {
-          "key": "device",
+          "key": "output",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
+          "label": {
+            "en": "Output",
+            "fr": "Sortie",
+            "de": "Ausgang",
+            "es": "Salida"
+          },
           "required": true
+        },
+        {
+          "key": "command",
+          "type": "select",
+          "label": {
+            "en": "Command",
+            "fr": "Commande",
+            "de": "Befehl",
+            "es": "Orden"
+          },
+          "required": true,
+          "options": [
+            {
+              "value": "on",
+              "label": {
+                "en": "Switch on",
+                "fr": "Allumer",
+                "de": "Einschalten",
+                "es": "Encender"
+              }
+            },
+            {
+              "value": "off",
+              "label": {
+                "en": "Switch off",
+                "fr": "Éteindre",
+                "de": "Ausschalten",
+                "es": "Apagar"
+              }
+            },
+            {
+              "value": "restart",
+              "label": {
+                "en": "Restart (short off)",
+                "fr": "Redémarrer (coupure brève)",
+                "de": "Neu starten (kurz aus)",
+                "es": "Reiniciar (corte breve)"
+              }
+            }
+          ]
         }
       ]
     }
   ],
   "scene_triggers": [
     {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+      "key": "netio_unreachable",
+      "label": {
+        "en": "Netio stopped answering",
+        "fr": "Netio injoignable",
+        "de": "Netio antwortet nicht mehr",
+        "es": "Netio dejó de responder"
       },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
+      "description": {
+        "en": "A Netio that answered stops answering: power cut, network down, unplugged.",
+        "fr": "Un Netio qui répondait ne répond plus : coupure de courant, réseau en panne, débranché.",
+        "de": "Ein Netio, der geantwortet hat, antwortet nicht mehr: Stromausfall, Netzwerk weg, ausgesteckt.",
+        "es": "Un Netio que respondía deja de responder: corte de luz, red caída, desenchufado."
+      },
       "variables": [
         {
-          "key": "target",
+          "key": "netio",
           "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
+          "label": {
+            "en": "Netio name",
+            "fr": "Nom du Netio",
+            "de": "Name des Netio",
+            "es": "Nombre del Netio"
+          }
+        }
+      ]
+    },
+    {
+      "key": "netio_reachable_again",
+      "label": {
+        "en": "Netio answers again",
+        "fr": "Netio de nouveau joignable",
+        "de": "Netio wieder erreichbar",
+        "es": "Netio responde de nuevo"
+      },
+      "description": {
+        "en": "A Netio that stopped answering answers again, e.g. after a power cut.",
+        "fr": "Un Netio qui ne répondait plus répond de nouveau, par ex. après une coupure de courant.",
+        "de": "Ein Netio, der nicht mehr geantwortet hat, antwortet wieder, z. B. nach einem Stromausfall.",
+        "es": "Un Netio que había dejado de responder responde de nuevo, p. ej. tras un corte de luz."
+      },
+      "variables": [
+        {
+          "key": "netio",
+          "type": "string",
+          "label": {
+            "en": "Netio name",
+            "fr": "Nom du Netio",
+            "de": "Name des Netio",
+            "es": "Nombre del Netio"
+          }
         }
       ]
     }
   ],
   "scene_actions": [
     {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
+      "key": "control_output",
+      "label": {
+        "en": "Control a Netio output",
+        "fr": "Piloter une sortie Netio",
+        "de": "Netio-Ausgang steuern",
+        "es": "Controlar una salida Netio"
       },
-      "timeout_seconds": 15,
+      "description": {
+        "en": "Switch an output on, off, or restart it (off then on). Off and restart need the option of the configuration.",
+        "fr": "Allume, éteint ou redémarre une sortie (coupure puis remise). Éteindre et redémarrer demandent l'option de la configuration.",
+        "de": "Schaltet einen Ausgang ein, aus oder startet ihn neu (aus, dann ein). Aus und Neustart brauchen die Option der Konfiguration.",
+        "es": "Enciende, apaga o reinicia una salida (apagado y encendido). Apagar y reiniciar requieren la opción de la configuración."
+      },
+      "timeout_seconds": 30,
       "fields": [
         {
-          "key": "device",
+          "key": "output",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
+          "label": {
+            "en": "Output",
+            "fr": "Sortie",
+            "de": "Ausgang",
+            "es": "Salida"
+          },
           "required": true
-        }
-      ],
-      "outputs": [
+        },
         {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
+          "key": "command",
+          "type": "select",
+          "label": {
+            "en": "Command",
+            "fr": "Commande",
+            "de": "Befehl",
+            "es": "Orden"
+          },
+          "required": true,
+          "options": [
+            {
+              "value": "on",
+              "label": {
+                "en": "Switch on",
+                "fr": "Allumer",
+                "de": "Einschalten",
+                "es": "Encender"
+              }
+            },
+            {
+              "value": "off",
+              "label": {
+                "en": "Switch off",
+                "fr": "Éteindre",
+                "de": "Ausschalten",
+                "es": "Apagar"
+              }
+            },
+            {
+              "value": "restart",
+              "label": {
+                "en": "Restart (short off)",
+                "fr": "Redémarrer (coupure brève)",
+                "de": "Neu starten (kurz aus)",
+                "es": "Reiniciar (corte breve)"
+              }
+            }
+          ]
         }
       ]
     }
   ],
   "widgets": [
     {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
+      "key": "outputs",
+      "label": {
+        "en": "Netio outputs",
+        "fr": "Sorties Netio",
+        "de": "Netio-Ausgänge",
+        "es": "Salidas Netio"
       },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "description": {
+        "en": "The outputs of a Netio, power and voltage, and a button to control an output.",
+        "fr": "Les sorties d'un Netio, puissance et tension, et un bouton pour piloter une sortie.",
+        "de": "Die Ausgänge eines Netio, Leistung und Spannung, und eine Taste zum Steuern.",
+        "es": "Las salidas de un Netio, potencia y tensión, y un botón para controlar una salida."
+      },
+      "icon": "power",
+      "action_timeout_seconds": 30,
+      "settings": [
+        {
+          "key": "device",
+          "type": "select",
+          "source": "devices",
+          "label": {
+            "en": "Netio (any of its devices)",
+            "fr": "Netio (un de ses appareils)",
+            "de": "Netio (eines seiner Geräte)",
+            "es": "Netio (cualquiera de sus dispositivos)"
+          },
+          "required": false
+        },
+        {
+          "key": "show_measures",
+          "type": "boolean",
+          "label": {
+            "en": "Show power and voltage",
+            "fr": "Afficher puissance et tension",
+            "de": "Leistung und Spannung anzeigen",
+            "es": "Mostrar potencia y tensión"
+          },
+          "default": true
+        },
+        {
+          "key": "show_control",
+          "type": "boolean",
+          "label": {
+            "en": "Show the control button",
+            "fr": "Afficher le bouton de pilotage",
+            "de": "Steuertaste anzeigen",
+            "es": "Mostrar el botón de control"
+          },
+          "default": true
+        }
+      ]
     }
   ]
 }

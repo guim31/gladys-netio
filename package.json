@@ -1,8 +1,8 @@
 {
-  "name": "gladys-integration-template-js",
+  "name": "gladys-netio",
   "version": "1.0.0",
   "private": true,
-  "description": "Official starter template to build an external integration for Gladys Assistant with the JavaScript SDK.",
+  "description": "Netio power strips and PDUs in Gladys Assistant, over the local JSON API.",
   "type": "module",
   "main": "index.js",
   "scripts": {
