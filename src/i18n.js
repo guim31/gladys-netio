@@ -210,9 +210,9 @@ export const MESSAGES = {
   },
   restartWhileOff: (name) => ({
     en: `${name} is off: switch it on instead of restarting it.`,
-    fr: `${name} est éteinte : allumez-la plutôt que de la redémarrer.`,
+    fr: `La sortie « ${name} » est éteinte : allumez-la plutôt que de la redémarrer.`,
     de: `${name} ist aus: Schalte den Ausgang ein, statt ihn neu zu starten.`,
-    es: `${name} está apagada: enciéndala en lugar de reiniciarla.`,
+    es: `La salida «${name}» está apagada: enciéndala en lugar de reiniciarla.`,
   }),
   commandFailed: (name, error) =>
     localize((language) =>
@@ -231,21 +231,21 @@ export const MESSAGES = {
     ({
       on: {
         en: `${name} switched on.`,
-        fr: `${name} allumée.`,
+        fr: `Sortie « ${name} » allumée.`,
         de: `${name} eingeschaltet.`,
-        es: `${name} encendida.`,
+        es: `Salida «${name}» encendida.`,
       },
       off: {
         en: `${name} switched off.`,
-        fr: `${name} éteinte.`,
+        fr: `Sortie « ${name} » éteinte.`,
         de: `${name} ausgeschaltet.`,
-        es: `${name} apagada.`,
+        es: `Salida «${name}» apagada.`,
       },
       restart: {
         en: `${name} restarting.`,
-        fr: `${name} en cours de redémarrage.`,
+        fr: `Sortie « ${name} » en cours de redémarrage.`,
         de: `${name} wird neu gestartet.`,
-        es: `${name} reiniciándose.`,
+        es: `Salida «${name}» reiniciándose.`,
       },
     })[command],
 };

@@ -13,7 +13,7 @@
 // -----------------------------------------------------------------------------
 
 import { WIDGET_COLORS } from '@gladysassistant/integration-sdk';
-import { FEATURES, netioIds, netioName } from './devices.js';
+import { FEATURES, netioIds, netioName as netioDisplay } from './devices.js';
 import {
   COMMAND_TEXT,
   STATE_TEXT,
@@ -54,6 +54,7 @@ function tile(label, icon, featureId, created, value, unit) {
  * @param {boolean} input.allowPowerOff
  * @param {{ features: Set<string> }} input.created
  * @param {(output: object) => string} input.outputName
+ * @param {() => string} [input.netioName] the name of the Netio in Gladys
  * @param {object} [input.settings]
  * @param {string} input.language
  */
@@ -64,6 +65,7 @@ export function buildWidgetContent({
   allowPowerOff,
   created,
   outputName,
+  netioName = () => (record.status ? netioDisplay(record.status) : ''),
   settings,
   language,
 }) {
@@ -114,7 +116,7 @@ export function buildWidgetContent({
   const items = [];
   if (record.error) {
     items.push({
-      label: netioName(status).slice(0, 40),
+      label: netioName().slice(0, 40),
       value: pick(WIDGET_TEXT.unreachable, language),
       icon: 'alert-triangle',
       color: WIDGET_COLORS.DANGER,

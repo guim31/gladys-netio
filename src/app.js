@@ -30,6 +30,7 @@ import {
   FEATURES,
   buildDevices,
   buildStates,
+  netioIds,
   netioName,
   outputIds,
   outputName,
@@ -127,6 +128,9 @@ export function createApp({
       error: null,
       reachable: null, // null: not known yet
       measuresAt: -Infinity,
+      // Bumped around every command: a read sent before a command and
+      // answered after it carries the old state, and is dropped.
+      commandSeq: 0,
       dropped: false,
     };
   }
@@ -158,10 +162,20 @@ export function createApp({
   }
 
   /** The name of an output: given in Gladys, else the one it was proposed with. */
-  function outputDisplayName(record, output) {
+  function outputDisplayName(record, output, language = config.language) {
     const id = outputIds(gladys, record.platformId, output.id).device;
     const device = (gladys.devices ?? []).find((entry) => entry.external_id === id);
-    return device?.name || outputName(record.status, output, config.language);
+    return device?.name || outputName(record.status, output, language);
+  }
+
+  /** The name of a Netio: its device in Gladys, else the one of the Netio. */
+  function netioDisplayName(record) {
+    if (record.platformId) {
+      const id = netioIds(gladys, record.platformId).device;
+      const device = (gladys.devices ?? []).find((entry) => entry.external_id === id);
+      if (device?.name) return device.name;
+    }
+    return nameOf(record);
   }
 
   // --- Reading ----------------------------------------------------------------------
@@ -196,9 +210,14 @@ export function createApp({
 
   /** Read one Netio. @returns {Promise<boolean>} whether it answered */
   async function read(record) {
+    const seq = record.commandSeq;
     try {
       const json = await record.client.read();
       if (record.dropped) return false;
+      if (record.commandSeq !== seq) {
+        logger.debug(`${label(record)}: reading older than a command, dropped`);
+        return record.error === null;
+      }
       await applyStatus(record, json);
       return true;
     } catch (err) {
@@ -375,6 +394,8 @@ export function createApp({
   // --- Configuration ----------------------------------------------------------------
 
   async function applyConfig(raw) {
+    // The cycle in progress finishes on the records it started with.
+    await running;
     const previous = config;
     config = normalizeConfig(raw ?? {});
     const wanted = new Map(config.netios.map((netio) => [netio.slot, netio]));
@@ -392,6 +413,10 @@ export function createApp({
       logger.info(
         config.invalidSlots.length ? 'Invalid Netio address' : 'Waiting for a Netio address',
       );
+    }
+    // The widget form follows the option and the language.
+    if (previous.allowPowerOff !== config.allowPowerOff || previous.language !== config.language) {
+      nudgeWidget();
     }
     // The feature names follow the language: publish the list again.
     await running;
@@ -448,7 +473,7 @@ export function createApp({
     // The state of now, not of the last read: a restart is never blind.
     if (commandKey === COMMANDS.RESTART) {
       if (!(await read(record))) {
-        throw new ActionFailure(MESSAGES.commandFailed(name, record.error.kind));
+        throw new ActionFailure(MESSAGES.commandFailed(name, record.error?.kind ?? 'unreachable'));
       }
       output = record.status.outputs.find((entry) => entry.id === output.id) ?? output;
       if (output.on === false) {
@@ -457,6 +482,7 @@ export function createApp({
     }
     logger.info(`${origin}: ${commandKey} ${name}`);
     let json;
+    record.commandSeq += 1;
     try {
       json = await record.client.control([{ ID: output.id, Action: COMMAND_ACTIONS[commandKey] }]);
     } catch (err) {
@@ -465,7 +491,15 @@ export function createApp({
       );
       throw new ActionFailure(MESSAGES.commandFailed(name, err.kind ?? 'http'));
     }
-    if (json) {
+    record.commandSeq += 1;
+    // The answer of the POST is used only when it is the whole state of the
+    // same Netio; otherwise (or unknown on real hardware) read it again.
+    const answer = json ? parseStatus(json) : null;
+    if (
+      answer &&
+      answer.platformId === record.platformId &&
+      answer.outputs.length === record.status.outputs.length
+    ) {
       await applyStatus(record, json);
     } else {
       await read(record);
@@ -497,13 +531,19 @@ export function createApp({
       if (!feature?.external_id?.endsWith(`:${FEATURES.state}`)) {
         throw new Error(pick(MESSAGES.unknownOutput, config.language));
       }
+      const wanted = Number(value);
+      if (wanted !== 0 && wanted !== 1) {
+        throw new Error(pick(MESSAGES.unknownCommand, config.language));
+      }
       try {
-        await command(
-          device.external_id,
-          Number(value) === 1 ? COMMANDS.ON : COMMANDS.OFF,
-          'Switch',
-        );
+        await command(device.external_id, wanted === 1 ? COMMANDS.ON : COMMANDS.OFF, 'Switch');
       } catch (err) {
+        // The dashboard flipped its toggle already: send the real state again.
+        const found = outputOf(device.external_id);
+        if (found) {
+          gladys.forgetPublishedStates?.(feature.external_id);
+          await publishStates(found.record, { force: true });
+        }
         throw err instanceof ActionFailure ? new Error(pick(err.message, config.language)) : err;
       }
     },
@@ -532,8 +572,8 @@ export function createApp({
       await cycle({ forceDevices: true });
       const message = localize((language) => {
         const lines = sortedRecords().map((record) =>
-          record.error
-            ? pick(errorOf(nameOf(record), record.error.kind), language)
+          record.error || !record.status
+            ? pick(errorOf(nameOf(record), record.error?.kind ?? 'unreachable'), language)
             : pick(
                 MESSAGES.found({
                   name: nameOf(record),
@@ -547,7 +587,10 @@ export function createApp({
         if (config.invalidSlots.length) lines.push(pick(MESSAGES.invalidHost, language));
         return lines.join('\n').slice(0, 1000);
       });
-      if (sortedRecords().some((record) => record.error) || config.invalidSlots.length) {
+      if (
+        sortedRecords().some((record) => record.error || !record.status) ||
+        config.invalidSlots.length
+      ) {
         throw new ActionFailure(message);
       }
       return message;
@@ -573,7 +616,8 @@ export function createApp({
         configured: config.netios.length > 0,
         allowPowerOff: config.allowPowerOff,
         created: created(),
-        outputName: (output) => outputDisplayName(record, output),
+        outputName: (output) => outputDisplayName(record, output, lang),
+        netioName: () => netioDisplayName(record),
         settings,
         language: lang,
       });

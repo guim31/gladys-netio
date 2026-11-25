@@ -41,7 +41,7 @@ test('switch on: always allowed, from the switch, the action and the scene', asy
     command: 'on',
   });
   assert.equal(ack.success, true);
-  assert.equal(ack.data.message.fr, 'Rack sortie 3 allumée.');
+  assert.equal(ack.data.message.fr, 'Sortie « Rack sortie 3 » allumée.');
 
   w.netio.output(3).State = 0;
   const scene = await w.gladys.fake.sceneAction('control_output', {
@@ -166,4 +166,80 @@ test('widget button: switch an output through the form', async (t) => {
       { settings: {}, values: { output: '2', command: 'on' } },
     ),
   );
+});
+
+test('a command during a cycle: the older reading does not overwrite it', async (t) => {
+  const w = await world(t, { config: allowed() });
+  const output1 = w.device(`${SERIAL}-1`).external_id;
+  const original = w.netio.request;
+  // The GET of the cycle leaves before the command and comes back after it.
+  w.netio.request = async (url, options) => {
+    if (options.method === 'GET' && !w.slowDone) {
+      w.slowDone = true;
+      const answer = await original(url, options);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return answer;
+    }
+    return original(url, options);
+  };
+  const cycle = w.app.cycle();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const ack = await w.gladys.fake.sceneAction('control_output', {
+    output: output1,
+    command: 'off',
+  });
+  assert.equal(ack.success, true);
+  await cycle;
+  const published = w.gladys.fake.states
+    .filter((s) => s.device_feature_external_id === `${output1}:state`)
+    .map((s) => s.state);
+  assert.deepEqual(published, [1, 0], 'never on again after the off');
+});
+
+test('a POST answer that is not the whole state: the Netio is read again', async (t) => {
+  const w = await world(t);
+  const original = w.netio.request;
+  w.netio.request = async (url, options) => {
+    const answer = await original(url, options);
+    if (options.method !== 'POST') return answer;
+    const state = JSON.parse(answer.body);
+    return { status: 200, body: JSON.stringify({ Outputs: [state.Outputs[2]] }) };
+  };
+  const output3 = w.device(`${SERIAL}-3`).external_id;
+  const ack = await w.gladys.fake.action('control_output', { output: output3, command: 'on' });
+  assert.equal(ack.success, true);
+  assert.equal(w.state(`${SERIAL}-3`, 'state'), 1);
+  const record = w.app.records.get(1);
+  assert.equal(record.platformId, SERIAL, 'the identity is kept');
+  assert.equal(record.status.outputs.length, 4);
+  assert.equal(record.status.metered, true);
+});
+
+test('widget button: switching off refused by default', async (t) => {
+  const w = await world(t);
+  failure(
+    await w.gladys.fake.widgetAction(
+      'outputs',
+      'control',
+      { netio: SERIAL },
+      { settings: {}, values: { output: '1', command: 'off' } },
+    ),
+    /disabled/,
+  );
+  assert.equal(w.netio.output(1).State, 1);
+});
+
+test('the switch: a refused off sends the real state again, odd values refused', async (t) => {
+  const w = await world(t);
+  const output1 = w.device(`${SERIAL}-1`);
+  const state = output1.features.find((feature) => feature.external_id.endsWith(':state'));
+  const before = w.gladys.fake.states.length;
+  assert.equal((await w.gladys.fake.setValue(output1, state, 0)).success, false);
+  const resent = w.gladys.fake.states.slice(before);
+  assert.ok(
+    resent.some((s) => s.device_feature_external_id === state.external_id && s.state === 1),
+    'the dashboard gets "on" back',
+  );
+  assert.equal((await w.gladys.fake.setValue(output1, state, 2)).success, false);
+  assert.ok(!w.netio.requests.some((request) => request.method === 'POST'));
 });
