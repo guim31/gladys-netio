@@ -1,169 +1,185 @@
 // -----------------------------------------------------------------------------
-// Dashboard widgets (SDK v0.14+, Gladys 5.1+).
+// The "Netio outputs" dashboard widget: one Netio (chosen in its settings,
+// the first one otherwise), its outputs on or off with their power, the
+// total power, voltage and frequency on the metering models, and a button
+// that opens a form to switch an output on, off or restart it (Gladys 5.2+).
 //
-// A widget puts the integration's own data on the Gladys dashboard without a
-// dedicated core widget. The manifest `widgets` field declares its identity
-// (key, label, icon, optional per-instance `settings`); at runtime the
-// integration returns a DECLARATIVE content — `text`, `value`, `gauge`,
-// `status`, `chart`, `card-list`, `image`, `button` — that the core renders
-// with its own theme, dark mode and translations. No HTML, no CSS.
-//
-// Each entry of WIDGETS is keyed by the widget `key` and exposes:
-//   - get(gladys, { settings, language, units, config }): the content,
-//     registered by index.js with `gladys.onWidgetGet(key, ...)`;
-//   - action(gladys, { actionKey, params, settings, config }) (optional): a
-//     tapped `button` carrying an `action`, registered with
-//     `gladys.onWidgetAction`.
-//
-// Check your contents in the tests with `validateWidgetContent` (exported by
-// the SDK, see test/widgets.test.js), or run with DEBUG=gladys-integration-sdk
-// to have the SDK log every violation of the vocabulary and the budget.
+// A widget never costs a request to the Netio: the content is built from the
+// last cycle. The form fields carry multi-language labels (the core picks
+// the language when it renders the form). Budget of the core: 8 components; this content uses at most
+// 3 tiles, 1 status list and 1 button. The measures and the button can be
+// hidden (widget settings). Switching off and restarting are only offered
+// when the configuration allows them.
 // -----------------------------------------------------------------------------
 
+import { WIDGET_COLORS } from '@gladysassistant/integration-sdk';
+import { FEATURES, netioIds, netioName as netioDisplay } from './devices.js';
 import {
-  createLogger,
-  DEVICE_FEATURE_CATEGORIES,
-  DEVICE_TRANSPORTS,
-  WIDGET_COLORS,
-} from '@gladysassistant/integration-sdk';
-import { identifyDevice } from './devices/index.js';
-import { weatherStation } from './devices/weatherStation.js';
-import { plug } from './devices/plug.js';
-import { light } from './devices/light.js';
+  COMMAND_TEXT,
+  STATE_TEXT,
+  WIDGET_MESSAGES,
+  WIDGET_TEXT,
+  formatNumber,
+  localize,
+  pick,
+} from './i18n.js';
 
-const logger = createLogger({ name: 'widgets' });
+export const WIDGET_KEY = 'outputs';
+export const CONTROL_ACTION = 'control';
+export const WIDGET_TTL_SECONDS = 30;
+export const WIDGET_SETTINGS_DEFAULTS = { show_measures: true, show_control: true };
+const MAX_ROWS = 10;
 
-// Widget key, as declared in the manifest `widgets` field.
-export const DEMO_STATUS_WIDGET = 'demo_status';
+const setting = (settings, key) =>
+  typeof settings?.[key] === 'boolean' ? settings[key] : WIDGET_SETTINGS_DEFAULTS[key];
 
-// Keys of the `button` actions the demo_status content declares.
-const DEMO_STATUS_ACTIONS = { IDENTIFY_LIGHT: 'identify_light' };
+const message = (text, language) => ({
+  ttl_seconds: WIDGET_TTL_SECONDS,
+  components: [{ type: 'text', variant: 'body', text: pick(text, language) }],
+});
 
-// How the plug transport reads in the status list.
-const TRANSPORT_STATUS = {
-  [DEVICE_TRANSPORTS.LOCAL]: { value: { en: 'Local', fr: 'Locale' }, color: WIDGET_COLORS.SUCCESS },
-  [DEVICE_TRANSPORTS.CLOUD]: { value: { en: 'Cloud', fr: 'Cloud' }, color: WIDGET_COLORS.INFO },
-  [DEVICE_TRANSPORTS.UNREACHABLE]: {
-    value: { en: 'Unreachable', fr: 'Injoignable' },
-    color: WIDGET_COLORS.DANGER,
-  },
-};
-
-// A live tile references a feature by its external_id: read it from the
-// discovery payload itself, so the widget and the device never disagree.
-function featureExternalId(gladys, config, blueprint, category) {
-  const device = blueprint.buildDevice(gladys, config);
-  return device.features.find((feature) => feature.category === category).external_id;
-}
-
-function plugConnectionStatus(gladys, config) {
-  const { transport, degraded } = plug.transport(gladys, config);
-  const { value, color } = TRANSPORT_STATUS[transport];
-  if (degraded) {
-    return {
-      value: { en: `${value.en} (degraded mode)`, fr: `${value.fr} (mode dégradé)` },
-      color: WIDGET_COLORS.WARNING,
-    };
+/** A tile bound to a feature of the Netio device when the user added it. */
+function tile(label, icon, featureId, created, value, unit) {
+  if (created.features.has(featureId)) {
+    return { type: 'value', label, icon, device_feature: featureId };
   }
-  return { value, color };
+  return value === null || value === undefined ? null : { type: 'value', label, icon, value, unit };
 }
-
-export const WIDGETS = {
-  [DEMO_STATUS_WIDGET]: {
-    // `settings` holds the per-instance values of the declared `settings`
-    // (none here); `language` and `units` are those of the user viewing the
-    // dashboard, for the values you format yourself. Multi-language objects
-    // (`{ en, fr }`) are picked by the core, like everywhere else.
-    async get(gladys, { config }) {
-      logger.debug(`onWidgetGet <- ${DEMO_STATUS_WIDGET}`);
-      return {
-        // Reload policy: the computed parts below only change with the
-        // config, and index.js nudges the widget on every (re)connection and
-        // config update (see refreshWidgets) — the TTL is just a safety net.
-        ttl_seconds: 300,
-        components: [
-          // Device-bound tiles: LIVE, they follow the published states over
-          // the core's real-time path. No TTL, no nudge involved.
-          {
-            type: 'value',
-            label: { en: 'Temperature', fr: 'Température' },
-            icon: 'thermometer',
-            device_feature: featureExternalId(
-              gladys,
-              config,
-              weatherStation,
-              DEVICE_FEATURE_CATEGORIES.TEMPERATURE_SENSOR,
-            ),
-          },
-          {
-            type: 'value',
-            label: { en: 'Office plug', fr: 'Prise du bureau' },
-            icon: 'zap',
-            device_feature: featureExternalId(
-              gladys,
-              config,
-              plug,
-              DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
-            ),
-          },
-          // Computed rows: what the integration knows that no device feature
-          // carries. Served from the core cache until the TTL or a nudge.
-          {
-            type: 'status',
-            items: [
-              {
-                label: { en: 'Plug connection', fr: 'Connexion de la prise' },
-                icon: 'wifi',
-                ...plugConnectionStatus(gladys, config),
-              },
-              {
-                label: { en: 'Observed location', fr: 'Position observée' },
-                icon: 'map-pin',
-                value: `${config.latitude.toFixed(2)}, ${config.longitude.toFixed(2)}`,
-                color: WIDGET_COLORS.NEUTRAL,
-              },
-            ],
-          },
-          // `params` are declared HERE and sent back as-is: the handler never
-          // receives user input (a dashboard can hang on a public wall).
-          {
-            type: 'button',
-            label: { en: 'Identify the light', fr: 'Identifier la lampe' },
-            icon: 'eye',
-            style: 'secondary',
-            action: {
-              key: DEMO_STATUS_ACTIONS.IDENTIFY_LIGHT,
-              params: { device: light.deviceExternalId(gladys) },
-            },
-          },
-        ],
-      };
-    },
-
-    // Resolve an optional toast (string or multi-language object, ≤ 200
-    // characters). After a successful action the core drops the cached
-    // content and every open dashboard refetches it: no nudge needed.
-    async action(gladys, { actionKey, params, config }) {
-      logger.info(`onWidgetAction <- ${DEMO_STATUS_WIDGET}.${actionKey}`);
-      if (actionKey === DEMO_STATUS_ACTIONS.IDENTIFY_LIGHT) {
-        return identifyDevice(gladys, params.device, config);
-      }
-      // Throwing acks the action as failed: the message reaches the user.
-      throw new Error(`Unknown widget action: ${actionKey}`);
-    },
-  },
-};
 
 /**
- * Freshness nudge: ask the core to re-pull every widget NOW instead of
- * waiting for the content TTL. Call it when you KNOW a computed content
- * changed (here: the config, which drives the plug transport and the observed
- * location) — and after every (re)connection, since the nudges are
- * fire-and-forget: rate-limited core-side to 1 per 10 s per widget, dropped
- * silently while disconnected.
+ * @param {object} input
+ * @param {object} input.gladys
+ * @param {object|null} input.record the Netio shown (src/app.js)
+ * @param {boolean} input.configured
+ * @param {boolean} input.allowPowerOff
+ * @param {{ features: Set<string> }} input.created
+ * @param {(output: object) => string} input.outputName
+ * @param {() => string} [input.netioName] the name of the Netio in Gladys
+ * @param {object} [input.settings]
+ * @param {string} input.language
  */
-export function refreshWidgets(gladys) {
-  for (const key of Object.keys(WIDGETS)) {
-    gladys.requestWidgetRefresh(key);
+export function buildWidgetContent({
+  gladys,
+  record,
+  configured,
+  allowPowerOff,
+  created,
+  outputName,
+  netioName = () => (record.status ? netioDisplay(record.status) : ''),
+  settings,
+  language,
+}) {
+  if (!configured || !record) {
+    return message(WIDGET_MESSAGES.notConfigured, language);
   }
+  if (!record.status) {
+    return message(WIDGET_MESSAGES.noData, language);
+  }
+  const { status } = record;
+  const measures = setting(settings, 'show_measures');
+  const components = [];
+
+  if (measures && status.metered && !record.error) {
+    const ids = netioIds(gladys, record.platformId);
+    const { global } = status;
+    components.push(
+      ...[
+        tile(
+          pick(WIDGET_TEXT.power, language),
+          'zap',
+          ids.feature(FEATURES.totalPower),
+          created,
+          global.power === null ? null : Math.round(global.power),
+          'W',
+        ),
+        tile(
+          pick(WIDGET_TEXT.voltage, language),
+          'activity',
+          ids.feature(FEATURES.voltage),
+          created,
+          global.voltage === null ? null : formatNumber(global.voltage, 1, language),
+          'V',
+        ),
+        global.frequency === null
+          ? null
+          : {
+              type: 'value',
+              label: pick(WIDGET_TEXT.frequency, language),
+              icon: 'radio',
+              value: formatNumber(global.frequency, 1, language),
+              unit: 'Hz',
+            },
+      ].filter(Boolean),
+    );
+  }
+
+  const items = [];
+  if (record.error) {
+    items.push({
+      label: netioName().slice(0, 40),
+      value: pick(WIDGET_TEXT.unreachable, language),
+      icon: 'alert-triangle',
+      color: WIDGET_COLORS.DANGER,
+    });
+  }
+  for (const output of status.outputs.slice(0, MAX_ROWS - items.length)) {
+    let value = pick(
+      output.on === null ? STATE_TEXT.unknown : output.on ? STATE_TEXT.on : STATE_TEXT.off,
+      language,
+    );
+    if (measures && output.metered && output.on && output.power !== null) {
+      value = `${value} · ${Math.round(output.power)} W`;
+    }
+    items.push({
+      label: outputName(output).slice(0, 40),
+      value: value.slice(0, 40),
+      icon: 'power',
+      color: record.error
+        ? WIDGET_COLORS.NEUTRAL
+        : output.on
+          ? WIDGET_COLORS.SUCCESS
+          : WIDGET_COLORS.NEUTRAL,
+    });
+  }
+  if (items.length > 0) {
+    components.push({ type: 'status', items });
+  }
+
+  if (setting(settings, 'show_control') && !record.error && status.outputs.length > 0) {
+    const commands = allowPowerOff ? ['on', 'off', 'restart'] : ['on'];
+    components.push({
+      type: 'button',
+      label: pick(WIDGET_TEXT.control, language),
+      icon: 'power',
+      action: {
+        key: CONTROL_ACTION,
+        params: { netio: record.platformId },
+        fields: [
+          {
+            key: 'output',
+            type: 'select',
+            required: true,
+            label: WIDGET_TEXT.output,
+            default: String(status.outputs[0].id),
+            options: status.outputs.map((output) => ({
+              value: String(output.id),
+              label: localize(() => outputName(output).slice(0, 60)),
+            })),
+          },
+          {
+            key: 'command',
+            type: 'select',
+            required: true,
+            label: WIDGET_TEXT.command,
+            default: 'on',
+            options: commands.map((command) => ({
+              value: command,
+              label: COMMAND_TEXT[command],
+            })),
+          },
+        ],
+      },
+    });
+  }
+  return { ttl_seconds: WIDGET_TTL_SECONDS, components };
 }

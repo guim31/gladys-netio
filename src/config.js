@@ -1,45 +1,106 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
+// Configuration of the integration, as filled in by the user from the
+// manifest `config_schema`. DEFAULT_CONFIG mirrors the manifest defaults
+// (test/manifest.test.js keeps them equal); normalizeConfig() turns whatever
+// the form sends into checked values, so the rest of the code never deals
+// with an empty or malformed field.
 //
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// Up to three Netio devices, each in its own slot: an address and the
+// account of the JSON API (M2M API → JSON in the Netio web interface).
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
+export const LANGUAGE_OPTIONS = ['fr', 'en', 'de', 'es'];
+export const SLOTS = [1, 2, 3];
+
+// Refresh intervals offered in the form, in seconds. A Netio answers its
+// JSON API in a few milliseconds: 10 s keeps the switches responsive.
+export const POLL_INTERVALS_S = [5, 10, 30, 60];
+
 export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+  netio_1_host: '',
+  netio_1_username: '',
+  netio_1_password: '',
+  netio_2_host: '',
+  netio_2_username: '',
+  netio_2_password: '',
+  netio_3_host: '',
+  netio_3_username: '',
+  netio_3_password: '',
+  poll_interval: '10',
+  allow_power_off: false,
+  language: 'fr',
 };
 
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * Turn what the user typed into the base URL of a Netio.
+ * "192.0.2.10", "192.0.2.10:8080", "http://netio.lan/", "https://192.0.2.10"
+ * are accepted; a path is dropped, and so are credentials typed in the URL
+ * (they must not end up in a log line: the account has its own fields).
+ * @returns {{ baseUrl: string, valid: boolean }} baseUrl '' when empty or invalid
+ */
+export function parseHost(raw) {
+  const text = String(raw ?? '').trim();
+  if (text === '') {
+    return { baseUrl: '', valid: true };
+  }
+  if (/\s/.test(text)) {
+    return { baseUrl: '', valid: false };
+  }
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { baseUrl: '', valid: false };
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.hostname === '') {
+    return { baseUrl: '', valid: false };
+  }
+  return { baseUrl: `${url.protocol}//${url.host}`, valid: true };
+}
+
+/** A boolean from the form (true, "true", 1, "1"); anything else is false. */
+function bool(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * @param {Record<string, unknown>} [raw] the config from the SDK
  */
 export function normalizeConfig(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const netios = [];
+  const invalidSlots = [];
+  for (const slot of SLOTS) {
+    const { baseUrl, valid } = parseHost(source[`netio_${slot}_host`]);
+    if (!valid) {
+      invalidSlots.push(slot);
+      continue;
+    }
+    if (!baseUrl) {
+      continue;
+    }
+    const password = source[`netio_${slot}_password`];
+    netios.push({
+      slot,
+      baseUrl,
+      username: text(source[`netio_${slot}_username`]),
+      // A pasted password often carries a trailing new line; spaces inside are kept.
+      password: typeof password === 'string' ? password.replace(/^[\r\n]+|[\r\n]+$/g, '') : '',
+    });
+  }
+  const interval = Number(source.poll_interval ?? DEFAULT_CONFIG.poll_interval);
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    netios,
+    invalidSlots,
+    pollIntervalMs:
+      (POLL_INTERVALS_S.includes(interval) ? interval : Number(DEFAULT_CONFIG.poll_interval)) *
+      1000,
+    allowPowerOff: bool(source.allow_power_off),
+    language: LANGUAGE_OPTIONS.includes(source.language)
+      ? source.language
+      : DEFAULT_CONFIG.language,
   };
 }

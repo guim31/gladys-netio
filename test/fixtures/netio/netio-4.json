@@ -1,0 +1,20 @@
+{
+  "Agent": {
+    "Model": "NETIO 4",
+    "Version": "3.4.2",
+    "JSONVer": "2.1",
+    "DeviceName": "Office",
+    "VendorID": 0,
+    "OemID": 0,
+    "SerialNumber": "24A42C390002",
+    "Uptime": 98012,
+    "Time": "2026-11-20T14:47:41+01:00",
+    "NumOutputs": 4
+  },
+  "Outputs": [
+    { "ID": 1, "Name": "Printer", "State": 1, "Action": 6, "Delay": 2020 },
+    { "ID": 2, "Name": "Lamp", "State": 0, "Action": 6, "Delay": 2020 },
+    { "ID": 3, "Name": "output_3", "State": 1, "Action": 6, "Delay": 2020 },
+    { "ID": 4, "Name": "output_4", "State": 0, "Action": 6, "Delay": 2020 }
+  ]
+}

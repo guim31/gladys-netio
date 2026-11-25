@@ -16,7 +16,7 @@ its only runtime dependency. It started from the official JavaScript template.
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
+node --test test/app.test.js              # one file
 node --test --test-name-pattern "plug"    # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
@@ -31,15 +31,19 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+index.js                          SDK wiring only: createApp(), register(), connect()
+src/app.js                        refresh cycle (own timer), states, triggers, commands, handlers
+src/netio/client.js               JSON API client (GET/POST /netio.json, Basic auth, errors)
+src/netio/parse.js                answer of /netio.json → plain values in Gladys units
+src/devices.js                    Gladys devices (the Netio, one per output) and their states
+src/widgets.js                    "Netio outputs" widget content
+src/i18n.js                       every user-facing text, en/fr/de/es
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
+src/issues.js                     a repeated failure logged once
+gladys-assistant-integration.json manifest: name, config_schema, actions, scenes, widget...
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys
+test/helpers/fakeNetio.js         fake Netio following the JSON protocol documentation
+dev/fake-netio-server.js          the fake Netio over HTTP, for tests in Docker (not in the image)
 test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
@@ -58,7 +62,7 @@ test/                             node --test, against the SDK's fake Gladys (in
   one, `0`/`0` for a feature without a range (text, image...). A missing one
   can pass the publication on a core that does not check it, then fail when
   the user clicks "Add" (HTTP 422 `t_device_feature.min cannot be null`). The
-  SDK's fake Gladys refuses it on publication, and `test/devices.test.js`
+  SDK's fake Gladys refuses it on publication, and `test/gladys-rules.test.js`
   checks them.
 - **The container rootfs is read-only.** Write only under `/data`, the one
   writable volume. Never log tokens, passwords or API keys.
@@ -78,8 +82,8 @@ test/                             node --test, against the SDK's fake Gladys (in
   `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
   code (defaults, action, scene and widget handlers): change both sides
   together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
+- **User-facing text** is in four languages (en, fr, de, es): action messages,
+  manifest texts, and `docs/*.md`, kept in sync (`test/i18n.test.js`).
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
   in English. Tests never touch the network.
 
@@ -259,3 +263,40 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## Netio : API et choix (25/11/2026)
+
+- **API M2M JSON** (doc NETIO « M2M API Protocol JSON », JSONVer 2.x) : `GET /netio.json` rend tout
+  (`Agent`, `GlobalMeasure` sur les modèles à mesure, `Outputs`), `POST /netio.json`
+  `{"Outputs":[{"ID":n,"Action":a}]}` commande (0 off, 1 on, 2 short off, 3 short on, 4 toggle,
+  5 inchangé, 6 ignoré). Basic auth, comptes lecture seule et lecture-écriture distincts : 401 mauvais
+  compte, 403 écriture avec le compte lecture, 400 commande mal formée. Unités Netio : courants en
+  **mA**, énergies en **Wh**, convertis en A et kWh. La réponse du POST est traitée avec indulgence
+  (sans JSON d'état, on relit).
+- **Développé sans le matériel** : le faux Netio (`test/helpers/fakeNetio.js`) suit la doc ; à
+  confirmer sur un vrai appareil : la réponse du POST, le code exact d'un compte lecture qui écrit, le
+  nom d'usine des sorties (`output_N`, traité comme « sans nom »).
+- **Identité** : numéro de série (`Agent.SerialNumber`), sinon MAC, sinon `slotN`. Appareils
+  `netio:<série>` (modèles à mesure seulement) et `netio-output:<série>-<id>`.
+- **Sécurité** : allumer toujours permis ; éteindre et redémarrer refusés sans
+  `allow_power_off` (désactivé par défaut). L'interrupteur reste `read_only: false` dans les deux cas
+  (structure stable, pas de « Mettre à jour » en changeant l'option) : c'est le code qui refuse.
+- Pas de fréquence ni de facteur de puissance en fonctionnalité (pas d'unité hertz ni de type dans
+  Gladys) : la fréquence est dans le widget.
+- Mesures publiées au plus une fois par minute (300 états/min du cœur), interrupteurs tout de suite ;
+  `publishChangedStates` avec heartbeat de 6 h.
+- Le bouton du widget ouvre un formulaire (`fields`, Gladys ≥ 5.2.0) : ses libellés de champs et
+  d'options **doivent être des objets multilingues** (`validateWidgetContent` refuse une chaîne).
+
+## Tests in Docker
+
+```bash
+sg docker -c 'docker build -t gladys-test-netio .'
+sg docker -c 'docker network create gladys-test-netio'
+sg docker -c 'docker run -d --name gladys-test-netio-fake --network gladys-test-netio \
+  -v "$PWD":/src:ro -w /src -e NETIO_WRITE=admin:secret mirror.gcr.io/library/node:24-alpine \
+  node dev/fake-netio-server.js'
+```
+
+Puis l'image de l'intégration, contraintes du bac à sable (`--cap-drop ALL --read-only --memory 256m`
+…), sur ce réseau. Tout supprimer à la fin.
